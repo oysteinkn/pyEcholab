@@ -374,7 +374,7 @@ class EK80(object):
                  start_ping=None, end_ping=None, frequencies=None,
                  channel_ids=None, incremental=None, start_sample=None,
                  end_sample=None, progress_callback=None, nmea=True,
-                 callback_ref=None):
+                 callback_ref=None, nmea_only=False):
         """Reads one or more Simrad EK80 .raw files and appends the data to any
         existing data. The data are ordered as read.
 
@@ -531,7 +531,7 @@ class EK80(object):
             #  and read datagrams until we're done
             while not finished:
                 #  read a datagram - method returns some basic info
-                dg_info = self._read_datagram(fid, nmea=nmea)
+                dg_info = self._read_datagram(fid, nmea=nmea, nmea_only=nmea_only)
 
                 #  call progress callback if supplied
                 if (progress_callback):
@@ -692,7 +692,7 @@ class EK80(object):
         return config_datagram
 
 
-    def _read_datagram(self, fid, nmea=True):
+    def _read_datagram(self, fid, nmea=True, nmea_only=False):
         """Reads the next raw file datagram
 
         This method reads the next datagram from the file, storing the
@@ -718,7 +718,9 @@ class EK80(object):
 
         #  attempt to read the next datagram
         try:
-            new_datagram = fid.read(1)
+            new_datagram = fid.read(1, nmea_only)
+            if new_datagram == b"":
+                return result
         except SimradEOF:
             #  we're at the end of the file
             result['finished'] = True
@@ -738,10 +740,14 @@ class EK80(object):
         result['timestamp'] = new_datagram['timestamp']
         result['bytes_read'] = new_datagram['bytes_read']
         result['type'] = new_datagram['type']
-
-        # If this is a NMEA datagram and we're not storing them, bail
-        if not nmea and new_datagram['type'].startswith('NME'):
-            # This is a NMEA datagram and we're skipping them
+        
+        
+        # NME datagrams store ancillary data as NMEA-0183 style ASCII data.
+        if new_datagram['type'].startswith('NME'):
+            if nmea:
+                # Add the datagram to our nmea_data object.
+                self.nmea_data.add_datagram(new_datagram['timestamp'],
+                        new_datagram['nmea_string'])
             return result
 
         # We have to process all XML parameter and environment datagrams
@@ -977,12 +983,6 @@ class EK80(object):
                             self._ping_sequence,
                             start_sample=self.read_start_sample,
                             end_sample=self.read_end_sample)
-
-        # NME datagrams store ancillary data as NMEA-0183 style ASCII data.
-        elif new_datagram['type'].startswith('NME'):
-            # Add the datagram to our nmea_data object.
-            self.nmea_data.add_datagram(new_datagram['timestamp'],
-                    new_datagram['nmea_string'])
 
         # TAG datagrams contain time-stamped annotations inserted via the
         # recording software. They are not associated with a specific channel

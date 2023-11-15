@@ -249,7 +249,7 @@ class RawSimradFile(BufferedReader):
         return BufferedReader.read(self, k)
 
 
-    def _read_next_dgram(self):
+    def _read_next_dgram(self, nmea_only=False):
         '''
         Attempts to read the next datagram from the file.
 
@@ -283,7 +283,7 @@ class RawSimradFile(BufferedReader):
             self._find_next_datagram()
 
             #  and then return that
-            return self._read_next_dgram()
+            return self._read_next_dgram(nmea_only)
 
         #  get the raw bytes from the header
         raw_dgram = header['raw_bytes']
@@ -301,7 +301,7 @@ class RawSimradFile(BufferedReader):
             log.warning('Datagram %d (@%d) shorter than expected length:  %d < %d', self.tell(),
                         old_file_pos, bytes_read, header['size'])
             self._find_next_datagram()
-            return self._read_next_dgram()
+            return self._read_next_dgram(nmea_only)
 
         #  now read the trailing size value
         try:
@@ -317,7 +317,11 @@ class RawSimradFile(BufferedReader):
                 header['size'], dgram_size_check, self._tell_bytes(), self.tell())
             self._find_next_datagram()
 
-            return self._read_next_dgram()
+            return self._read_next_dgram(nmea_only)
+        
+        # return early if nmea_only and dgram is not nmea
+        if nmea_only and raw_dgram[:3].decode('iso-8859-1') != "NME":
+            return b""
 
         #  add the header (16 bytes) and repeated size (4 bytes) to the payload
         #  bytes to get the total bytes read for this datagram.
@@ -410,7 +414,7 @@ class RawSimradFile(BufferedReader):
             return False
 
 
-    def read(self, k):
+    def read(self, k, nmea_only=False):
         '''
         :param k: Number of datagrams to read
         :type k: int
@@ -422,7 +426,7 @@ class RawSimradFile(BufferedReader):
 
         if k == 1:
             try:
-                return self._read_next_dgram()
+                return self._read_next_dgram(nmea_only)
             except Exception:
                 if self.at_eof():
                     raise SimradEOF()
